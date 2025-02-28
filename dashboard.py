@@ -20,6 +20,8 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+import cv2
+import numpy as np
 
 os.environ["DISPLAY"] = ":0"
 
@@ -64,7 +66,6 @@ def get_weather():
         icon_response = requests.get(icon_url)
         icon_image = Image.open(io.BytesIO(icon_response.content))
         icon_image = icon_image.resize((300, 300))
-        icon_photo = ImageTk.PhotoImage(icon_image)
     else:
         temp_label.config(text="")
         condition_label.config(text="")
@@ -78,17 +79,7 @@ def get_weather():
     URL = f"http://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={API_KEY}&cnt={cnt}"
     response = requests.get(URL)
     data = response.json()
-    print(json.dumps(data, indent=4))
-    # temperatures = [entry["main"]["temp"] for entry in data["list"]]
-    # print(temperatures)
-    # # Find min and max temperatures
-    # min_temp = min(temperatures)
-    # max_temp = max(temperatures)
-
-    # print(f"Minimum Temperature: {min_temp} K")
-    # print(f"Maximum Temperature: {max_temp} K")
-
-    root.after(600000, get_weather)
+    # print(json.dumps(data, indent=4))
 
 def get_astronomical_events():
     global planet_icons  # Ensure the dictionary persists
@@ -137,27 +128,25 @@ def get_astronomical_events():
 
                 # Insert into the table
                 astro_table.insert("", "end", image=planet_icons[name], values=(name, f"{az:.1f}", f"{el:.1f}"), tags=(tag,))
-    root.after(1000*5*60, get_astronomical_events) # Update every 5 minutes
 
 def check_birthdays():
     today = datetime.datetime.now().strftime("%m-%d")
-    date = datetime.datetime.now()
-    day_of_week = date.strftime("%A")
-    month = date.strftime("%B")
-    day = date.day
+    # date = datetime.datetime.now()
+    # day_of_week = date.strftime("%A")
+    # month = date.strftime("%B")
+    # day = date.day
 
-    # Add the correct suffix (st, nd, rd, th)
-    suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    # # Add the correct suffix (st, nd, rd, th)
+    # suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
 
-    # Combine everything
-    formatted_date = f"{day_of_week}, {month} {day}{suffix}"
+    # # Combine everything
+    # formatted_date = f"{day_of_week}, {month} {day}{suffix}"
 
-    date_label.config(text=formatted_date)
+    # date_label.config(text=formatted_date)
     # if today in BIRTHDAYS:
     #     birthday_label.config(text=f"Today: {BIRTHDAYS[today]}")
     # else:
     #     birthday_label.config(text="No special birthdays today")
-
 def exit_fullscreen(event):
     root.attributes('-fullscreen', False)
     root.geometry("800x600")
@@ -187,9 +176,6 @@ def exit_fullscreen(event):
     # # Configure column widths evenly
     # for i in range(7):
     #     root.grid_columnconfigure(i, weight=1)
-
-
-
 
 root = tk.Tk()
 root.title("Weather Dashboard")
@@ -293,7 +279,27 @@ def get_upcoming_events():
 def update_clock():
     now = datetime.datetime.now().strftime('%I:%M:%S %p')
     clock_label.config(text=now)
-    root.after(1000, update_clock)
+    minutes = int(datetime.datetime.now().strftime('%M'))
+    seconds = int(datetime.datetime.now().strftime('%S'))
+    
+    date = datetime.datetime.now()
+    day_of_week = date.strftime("%A")
+    month = date.strftime("%B")
+    day = date.day
+    # Add the correct suffix (st, nd, rd, th)
+    suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    # Combine everything
+    formatted_date = f"{day_of_week}, {month} {day}{suffix}"
+    date_label.config(text=formatted_date)
+
+    if minutes == 0 and seconds == 0:
+        # once every hour, on the hour, update all fields
+        get_weather()
+        get_astronomical_events()
+        check_birthdays()
+        get_upcoming_events()
+    root.after(1000, update_clock) # every second, update the clock
+
 
 def format_date(date_str):
     # Convert string to datetime object
@@ -317,19 +323,8 @@ temp_label.pack()
 temp_lo_hi_label = tk.Label(frame_weather, text="", font=("Arial", 24, "bold"), bg="black", fg="white",anchor="n")
 temp_lo_hi_label.pack()
 
-# temp_hi_label = tk.Label(frame_weather, text="", font=("Arial", 30, "bold"), bg="black", fg="white",anchor="n")
-# temp_hi_label.pack(side="right")
-
-
-
 frame_details = tk.Frame(frame_weather, bg="black")
 frame_details.pack()
-
-# feels_like_label = tk.Label(frame_details, text="", font=("Arial", 16), bg="black", fg="white")
-# feels_like_label.pack()
-
-# humidity_label = tk.Label(frame_details, text="", font=("Arial", 16), bg="black", fg="white")
-# humidity_label.pack()
 
 condition_label = tk.Label(frame_weather, text="", font=("Arial", 16, "italic"), bg="black", fg="white")
 condition_label.pack()
@@ -339,7 +334,6 @@ sunrise_label.pack()
 
 sunset_label = tk.Label(frame_details, text="", font=("Arial", 16), bg="black", fg="white")
 sunset_label.pack()
-
 
 style = ttk.Style()
 style.theme_use("clam")  # Use 'clam' to allow background modifications
