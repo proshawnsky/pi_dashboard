@@ -1,7 +1,7 @@
 import customtkinter as ctk
 import datetime
 # from tkinter import ttk
-# import tkinter as tk
+import tkinter as tk
 import requests
 # import json
 from PIL import Image, ImageTk
@@ -13,6 +13,67 @@ from google.oauth2.credentials import Credentials # type: ignore
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request # type: ignore
 import re
+import random
+
+class Day:
+    def __init__(self, unixDay: int, frame=None, dateLabel=None, eventLabel=None):
+        self.unixDay = unixDay 
+        self.frame = frame
+        self.dateLabel = dateLabel
+        self.eventLabel = eventLabel
+        self.events = []
+    
+    def add_event(self, event=None):
+        self.events.append(event)
+        
+    def get_events(self):
+        return self.events
+    
+    def get_unixDay(self):
+        return self.unixDay
+    
+    def edit_events_label(self, str=str):
+        self.eventLabel.configure(text=str)
+
+    def set_date(self, date=0):
+        self.dateLabel.configure(text=str(date))
+
+    def set_frame_color(self,color="", border_width=2):
+        self.frame.configure(border_color=color,border_width=border_width)
+
+    def set_unixDay(self,unixDay):
+        self.unixDay = unixDay 
+    
+    def reset_events(self):
+        self.events.clear()
+
+class Event:
+    def __init__ (self, unixDay=None, summary=None, startTime=None, endTime=None):
+        self.unixDay = unixDay
+        self.summary = summary
+        
+    def get_unixDay(self):
+        return self.unixDay   
+    
+    def get_summary(self):
+        return self.summary 
+
+class Checklist:
+    def __init__(self, name = "", items=[]):
+        self.name = name
+        self.items = items
+        self.states = [False] * len(items)
+        self.labels = []
+    def set_labels(self, labels=[]):
+        self.labels = labels
+
+    def set_vars(self, vars=[]):
+        self.vars = vars
+    def set_message_label(self, footer_label=[]):
+        self.footer_label = footer_label
+
+Days = []
+Checklists = []
 
 # === WINDOW UTILITIES ===
 def exit_fullscreen(event=None):
@@ -77,7 +138,8 @@ def remove_ordinal_suffix(day_str):
     return re.sub(r"(st|nd|rd|th)", "", day_str)
 # === UPDATE DATA FIELDS ===
 def new_day():
-
+    # global Days
+    update_weather_tab()
     # Update Date Label on Home Page
     date = datetime.datetime.now()
     day_of_week = date.strftime("%A")
@@ -86,9 +148,8 @@ def new_day():
     suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")    # Add the correct suffix (st, nd, rd, th)
     formatted_date = f"{day_of_week}, {month} {day}{suffix}"    # Combine everything
     date_label.configure(text=formatted_date)
-
-    # Update 2-week Calendar squares
-    update_calendar_events()
+    
+    update_calendar_tab()
 
 def update_weather_tab():
     API_KEY = "930c87b7116a66e85b21d872488e5f66"
@@ -119,43 +180,94 @@ def update_weather_tab():
         ctk_img = ctk.CTkImage(pil_image, size=(84,84))
         icon_handle.configure(image=ctk_img,text="")
 
-        # label.pack(expand=True,side="top",anchor="n")
-
-        # Example: Add an icon (just a text placeholder for now)
-        # icon = ctk.CTkLabel(frame, text="🔆", font=("Arial", 20))  # Replace with an actual image if needed
-        # icon.pack(pady=5)
 def update_clock():
     now = datetime.datetime.now()
     clock_label.configure(text=now.strftime('%I:%M:%S %p'))
     if now.hour == 0 and now.minute == 0 and now.second == 0:
         new_day()  # Call the function exactly once at midnight
     app.after(1000, update_clock)  # Call again after 1 second
-
 def update_calendar_events():
-    today = datetime.date.today()
-    days_to_previous_sunday = today.weekday() + 1  # Monday is 0, Sunday is 6, so +1 gives us Sunday
-    previous_sunday = today - datetime.timedelta(days=days_to_previous_sunday)
-    two_week_dates = [previous_sunday + datetime.timedelta(days=i) for i in range(21)]
-
-    calendar_dates_unix = []
-    for i, calendar_date_label in enumerate(calendar_date_labels):
-        date = two_week_dates[i]
-        calendar_date_label.configure(text=f"{date.day}")
-
-        timestamp = int(date.strftime('%s'))  # This will give the Unix timestamp in seconds 
-        calendar_dates_unix.append(timestamp)
     
     userpass = "66ee8b75-2459-49ab-9a3f-586637c8fe61:3dda189650928f07a077fdd3d6f1cd1c6f0c2087e3e5188ee71280e089b843040735258c780a8af6477d1f1d05966934fdafdfd8615f77d8192e484ecfd61f09acb58b8eaf4da841162ba14fa56269b926fcccb93a2a72c6e96bb5a23516c05edd84aa1ae72b1084720724556a7ba4b0"
     authString = base64.b64encode(userpass.encode()).decode()
-    event_dates_unix, summaries = google_calendar_API()  # Fetch events
-    
-    matching_events = []
-    for event_idx, event_date_unix in enumerate(event_dates_unix):
-        for calendar_index, calendar_date in enumerate(calendar_dates_unix):        
-            if event_date_unix // 86400 == calendar_date // 86400:  # 86400 is the number of seconds in a day
-                calendar_event_labels[calendar_index].configure(text=summaries[event_idx])
+    all_events = google_calendar_API()  # Fetch events
 
-    return calendar_dates_unix
+    for day in Days:
+        day.reset_events()
+        for event in all_events:
+            if day.get_unixDay() == event.get_unixDay():
+                day.add_event(event)
+    for day in Days:
+        event_label = []
+        for event in day.get_events():
+            event_label += event.get_summary() + "\n\n"
+        event_label = "".join(event_label)
+        day.edit_events_label(event_label)
+
+def toggle(checklist, index):
+    """Toggle the state of the checklist item."""
+    print(checklist.name)
+    checklist.states[index] = not checklist.states[index]
+
+    if checklist.states[index]:
+        checklist.labels[index].configure(fg_color="green2") 
+    else:
+        checklist.labels[index].configure(fg_color="gray22") 
+    if all(checklist.states):
+        print("All Done!")
+        checklist.footer_label.configure(text=get_random_phrase())
+    # check_all_selected()
+
+def get_random_phrase():
+    phrases = [
+    "Only 40 more years!",
+    "Crush this day!",
+    "Have a great day at work!",
+    "Do it for the shareholders!",
+    "You are CEO Barbie!",
+    "Work hard today! (but not too hard!)",
+    "Rise and grind! (or just rise… that’s enough)",
+    "Remember: you're working for future-you's retirement!",
+    "Another day, another dollar (before taxes)!",
+    "Get in, get paid, get out!",
+    "Make that paper!",
+    "Don't let the existential dread win!",
+    "Meetings don't make money—just survive them!",
+    "You got this! (and by ‘this’ I mean capitalism)",
+    "If they ask for ‘one more thing,’ run!",
+    "Smile! It confuses management.",
+    "HR is not your friend, but coffee is!",
+    "Emails don't reply to themselves! (but they should...)",
+    "Clock in, zone out, clock out!",
+    "Just pretend it's a video game with bad graphics.",
+    "Keep calm and collect direct deposits.",
+    "Your future self will thank you for showing up today!",
+    "Success is just controlled chaos—go control some chaos!",
+    "Time to trade time for money again!",
+    "Make today better than your WiFi connection.",
+    "If all else fails, just look busy!",
+    "Remember: caffeine is a productivity multiplier!",
+    "Every meeting could have been an email—stay strong!",
+    "Monday’s almost over… unless it’s not Monday.",
+    "Do it for the PTO!",
+    "Another workday, another step closer to the weekend!",
+    "No one reads reports, just make it look impressive!"
+]
+    return random.choice(phrases)
+# def check_all_selected():
+#     """Check if all items are selected and show a message."""
+#     if all(var.get() for var in checklist_vars):
+#         # messagebox.showinfo("Checklist Complete", "All items are checked!")
+#         print("All Done!")
+#         footer_label.configure(text=get_random_phrase())
+#         # for var, label in zip(checklist_vars, labels):  # Assuming you have checklist_labels corresponding to each checklist item
+#         #     var.set(False)  # Set all to unselected state
+#         app.after(1000, reset_checklist_states)
+
+def reset_checklist_states():
+    for var, label in zip(checklist_vars, labels):  # Assuming you have checklist_labels corresponding to each checklist item
+        var.set(False)  # Set all to unselected state
+        label.configure(fg_color="gray20")  # Reset text color (if you changed it)
 
 def google_calendar_API():
     """Fetches and prints the next 5 upcoming events from Google Calendar."""
@@ -175,9 +287,9 @@ def google_calendar_API():
         orderBy="startTime"
     ).execute()
     
-    dates = []
-    summaries = []
+    all_events = []
     events = events_result.get("items", [])
+
     for event in events:
         day = event["start"].get("dateTime", event["start"].get("date"))  # Handle all-day events
         if "T" in day:
@@ -191,17 +303,16 @@ def google_calendar_API():
         day_clean = f"{day_clean} {current_year}"  # Assuming we want to use the current year
         date_obj = datetime.datetime.strptime(day_clean, "%b %d %Y")   # Step 4: Convert the cleaned string to a datetime object
         unix_timestamp = int(date_obj.timestamp()) # Step 5: Convert the datetime object to Unix time
-        dates.append(unix_timestamp)
         
-        summaries.append(event['summary'])
+        all_events.append(Event(unix_timestamp, event['summary']))
 
-    return dates, summaries
+    return all_events
 # === HOME TAB ===
 def initialize_home_tab(tab_home):
-    date_label = ctk.CTkLabel(tab_home, text = "", font=("Arial",52))
+    date_label = ctk.CTkLabel(tab_home, text = "", font=("Arial",72))
     date_label.pack(anchor="n")
 
-    clock_label = ctk.CTkLabel(tab_home, text = "", font=("Arial",86))
+    clock_label = ctk.CTkLabel(tab_home, text = "", font=("Arial",118))
     clock_label.pack(anchor="n")
 
     home_label = ctk.CTkLabel(tab_home, text="Welcome to the Home Tab!", font=("Arial", font_large))
@@ -250,49 +361,72 @@ def initialize_weather_tab(tab_weather):
 
     return weather_label, weather_forecast_containers, weather_forcast_day_labels, weather_forecast_temp_labels, weather_forcast_icons
 # === CALENDAR TAB ===
-def initialize_calendar_tab(tab_calendar):
-    # calendar_label = ctk.CTkLabel(tab_calendar, text="Welcome to the Calendar Tab!", font=("Arial", font_large))
-    # calendar_label.pack(expand=True)
-    
+def initialize_calendar_tab():
+    global tab_calendar
+    global Days
     # 2x7 grid for calendar dates
     row_frames = []
-    calendar_date_labels = []
-    calendar_event_labels = []
 
+    today = datetime.date.today()
+    days_to_previous_sunday = (today.weekday() + 1) % 7  # Ensure no extra day is subtracted
+    previous_sunday = today - datetime.timedelta(days=days_to_previous_sunday)
+    two_week_dates = [previous_sunday + datetime.timedelta(days=i) for i in range(14)]
+    
     day_of_week_frame = ctk.CTkFrame(tab_calendar)  # Create a row
     day_of_week_frame.pack(fill="both", expand=True,anchor="n")  # Stack rows vertically
     weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
-    for day in weekdays:
+    for day in weekdays:        # Make a label for the day of the week
         frame = ctk.CTkFrame(day_of_week_frame, corner_radius=1, border_width=2)
         frame.pack(side="left", fill="x", expand=True, padx=1, pady=1)  # Distribute evenly
-        
-        # Make a label for the day of the week
         day_of_week_label = ctk.CTkLabel(frame, text=day, font=("Arial", 18),width=100)  
         day_of_week_label.pack(pady=3,padx=0,side="top",expand=True, anchor="center")
 
-    for _ in range(3):  
+    for _ in range(2):  
         row_frame = ctk.CTkFrame(tab_calendar,height=80)  # Create a row
         row_frame.pack(fill="both", expand=True,anchor="s")  # Stack rows vertically
         row_frames.append(row_frame)
 
     for i,row_frame in enumerate(row_frames):
         for j in range(7):
+            date = two_week_dates[(i)*7+j]
+
             frame = ctk.CTkFrame(row_frame, corner_radius=0, border_width=2, width=100)
             frame.pack(side="left", fill="both", expand=True, padx=0, pady=0)  # Distribute evenly
+            # if date == today:
+            #     frame.configure(border_color='green2',border_width=3)
 
             # Make a label for the day of the week and date
+            # calendar_date_label = ctk.CTkLabel(frame, text=f"{date.day}", font=("Arial", 18),width=100)  
             calendar_date_label = ctk.CTkLabel(frame, text="", font=("Arial", 18),width=100)  
             calendar_date_label.pack(pady=3,side="top",expand=False,anchor="n")
-            calendar_date_labels.append(calendar_date_label)
 
             # Make a label to store the events in that day
-            calendar_event_label = ctk.CTkLabel(frame, text="", font=("Arial", 18),wraplength=90,width=100)  
+            calendar_event_label = ctk.CTkLabel(frame, text="", font=("Arial", 16),wraplength=90,width=100)  
             calendar_event_label.pack(pady=3,padx=4,side="top",expand=False)
-            calendar_event_labels.append(calendar_event_label)
-    return calendar_date_labels, calendar_event_labels
+
+            unixDay = int(date.strftime('%s'))
+            Days.append(Day(unixDay, frame, calendar_date_label, calendar_event_label))
 
     # return calendar_date_labels, calendar_event_labels
+def update_calendar_tab():
+    today = datetime.date.today()
+    days_to_previous_sunday = (today.weekday() + 1) % 7  # Ensure no extra day is subtracted
+    previous_sunday = today - datetime.timedelta(days=days_to_previous_sunday)
+    two_week_dates = [previous_sunday + datetime.timedelta(days=i) for i in range(14)]
+
+    for i, day in enumerate(Days):
+
+        date = two_week_dates[i]
+        if date == today:
+            day.set_frame_color('green2',3)
+        else:
+            day.set_frame_color('gray52',2)
+
+        day.set_date(date.day)
+        day.set_unixDay(int(date.strftime('%s')))
+    update_calendar_events()
+
 # === ASTRONOMY TAB ===
 def initialize_astronomy_tab(tab_astronomy):
     astronomy_label = ctk.CTkLabel(tab_astronomy, text="Welcome to the Astronomy Tab!", font=("Arial", font_large))
@@ -305,6 +439,54 @@ def initialize_settings_tab(tab_settings):
     exit_button.pack(pady=10)
     about_label = ctk.CTkLabel(tab_settings, text="Proshawnsky Pi Dashboard\nVersion 2.0", font=("Arial", 24))
     about_label.pack(expand=True)
+    update_button = ctk.CTkButton(tab_settings, text="Update Calendar", command=update_calendar_tab)
+    update_button.pack(pady=10)  # Adjust padding as needed
+# === CHECKLISTS TAB ===
+def initialize_checklists_tab(tab_checklists):
+    tabview = ctk.CTkTabview(tab_checklists,corner_radius=20,border_width=2)
+    tabview.pack(expand=True, fill="both", padx=0, pady=0,)
+    
+    Ellie_work_Checklist = Checklist(name="Ellie Work", items=["Phone", "Keys", "Badge", "Lunch","Water", "Coffee", "Laptop"])
+    Shawn_work_Checklist = Checklist(name="Shawn Work", items=["Phone", "Keys", "Wallet","Badge", "Lunch", "Coffee", "Glasses"])
+    Shawn_Biking = Checklist(name="Shawn Biking", items=["Water X2", "Food", "Phone","Wallet","Wahoo", "Lights","Gloves", "Glasses"])
+    
+    Checklists.append(Ellie_work_Checklist)
+    Checklists.append(Shawn_work_Checklist)
+    Checklists.append(Shawn_Biking)
+
+    for checklist in Checklists:
+        tab = tabview.add(checklist.name)
+        checklist.set_vars([tk.IntVar(value=0) for _ in checklist.items])
+        # checklist_vars = [tk.IntVar(value=0) for _ in checklist.items]
+        # tab_Ellie1.configure(bg_color="white")
+        labels = []
+        checklist_frame = tk.Frame(tab)
+        checklist_frame.pack(padx=0, pady=0, expand=True)  # Use pack for the frame
+        checklist_frame.configure(bg=tab.cget("fg_color"))
+
+        # Create a grid layout (2 columns) inside the frame
+        for index, item in enumerate(checklist.items):
+            row = index // 3  # Spread labels into two rows
+            col = index % 3   # Alternate between column 0 and 1
+
+            label = ctk.CTkLabel(checklist_frame, text=item, font=("Arial", 40), cursor="none", corner_radius=10,fg_color="gray20")  # Makes it clickable
+            label.bind("<Button-1>", lambda e, i=index, c=checklist: toggle(c,i))  # Bind click event
+            
+            label.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")  # Place in grid
+            labels.append(label)
+
+        checklist.set_labels(labels)
+        checklist_frame.columnconfigure(0, weight=1,uniform="equal")
+        checklist_frame.columnconfigure(1, weight=1,uniform="equal")
+        checklist_frame.columnconfigure(2, weight=1,uniform="equal")
+        tabview._segmented_button.configure(font=("Arial", 24))  # Adjust font size here
+
+        footer_label = ctk.CTkLabel(tab, text="", font=("Arial", 24))
+        footer_label.pack(pady=10)  # Using pack for other elements
+        checklist.set_message_label(footer_label)
+
+    return labels, footer_label
+
 # === SET UP WINDOW ===
 def start():
 # Initialize main application
@@ -336,17 +518,18 @@ def start():
     tab_weather = tabview.add("Weather")
     tab_calendar = tabview.add("Calendar")
     tab_astronomy = tabview.add("Astronomy")
-    tab_settings = tabview.add("Checklists")
+    tab_checklists = tabview.add("Checklists")
     tab_settings = tabview.add("Settings")
     tabview._segmented_button.configure(font=("Arial", 24))  # Adjust font size here
-    return app, tab_home, tab_weather, tab_calendar, tab_astronomy, tab_settings, font_large, font_small
+    return app, tab_home, tab_weather, tab_calendar, tab_astronomy, tab_settings, tab_checklists, font_large, font_small
 
 # Create window, populate tabs
-app, tab_home, tab_weather, tab_calendar, tab_astronomy, tab_settings, font_large, font_small = start()
+app, tab_home, tab_weather, tab_calendar, tab_astronomy, tab_settings, tab_checklists, font_large, font_small = start()
 date_label, clock_label = initialize_home_tab(tab_home)
 weather_label, weather_forecast_containers, weather_forcast_day_labels, weather_forecast_temp_labels, weather_forcast_icons = initialize_weather_tab(tab_weather)
-calendar_date_labels, calendar_event_labels = initialize_calendar_tab(tab_calendar)
+initialize_calendar_tab()
 initialize_astronomy_tab(tab_astronomy)
+labels, footer_label = initialize_checklists_tab(tab_checklists)
 initialize_settings_tab(tab_settings)
 
 # Update fields
