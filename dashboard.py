@@ -14,6 +14,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request # type: ignore
 import re
 import random
+import time
+import pygame
 
 class Day:
     def __init__(self, unixDay: int, frame=None, dateLabel=None, eventLabel=None):
@@ -71,9 +73,25 @@ class Checklist:
         self.vars = vars
     def set_message_label(self, footer_label=[]):
         self.footer_label = footer_label
+    def clear_checklist(self):
+        for i in range(len(self.states)):  # Assuming you have checklist_labels corresponding to each checklist item
+            self.states[i] = False  # Set all to unselected state
+            self.labels[i].configure(fg_color="gray20")  # Reset text color (if you changed it)
 
+class Planet:
+    def __init__ (self, name="", icon=None, startTime=None, endTime=None):
+        self.name = name
+        self.icon = icon
+        self.az = 0
+        self.el = 0    
 Days = []
 Checklists = []
+pygame.mixer.init()
+
+def play_sound():
+    pygame.mixer.music.load("mixkit-cool-interface-click-tone-2568.wav")  # Replace with your .wav file path
+    pygame.mixer.music.set_volume(1.0)  # Set volume to maximum (1.0 is the max)
+    pygame.mixer.music.play()
 
 # === WINDOW UTILITIES ===
 def exit_fullscreen(event=None):
@@ -179,7 +197,6 @@ def update_weather_tab():
         pil_image = Image.open(io.BytesIO(icon_response.content))
         ctk_img = ctk.CTkImage(pil_image, size=(84,84))
         icon_handle.configure(image=ctk_img,text="")
-
 def update_clock():
     now = datetime.datetime.now()
     clock_label.configure(text=now.strftime('%I:%M:%S %p'))
@@ -203,20 +220,17 @@ def update_calendar_events():
             event_label += event.get_summary() + "\n\n"
         event_label = "".join(event_label)
         day.edit_events_label(event_label)
-
 def toggle(checklist, index):
     """Toggle the state of the checklist item."""
-    print(checklist.name)
     checklist.states[index] = not checklist.states[index]
-
+    play_sound()
     if checklist.states[index]:
         checklist.labels[index].configure(fg_color="green2") 
     else:
         checklist.labels[index].configure(fg_color="gray22") 
     if all(checklist.states):
-        print("All Done!")
+        app.after(1000, checklist.clear_checklist)  # Call again after 1 second
         checklist.footer_label.configure(text=get_random_phrase())
-    # check_all_selected()
 
 def get_random_phrase():
     phrases = [
@@ -251,23 +265,10 @@ def get_random_phrase():
     "Monday’s almost over… unless it’s not Monday.",
     "Do it for the PTO!",
     "Another workday, another step closer to the weekend!",
-    "No one reads reports, just make it look impressive!"
-]
-    return random.choice(phrases)
-# def check_all_selected():
-#     """Check if all items are selected and show a message."""
-#     if all(var.get() for var in checklist_vars):
-#         # messagebox.showinfo("Checklist Complete", "All items are checked!")
-#         print("All Done!")
-#         footer_label.configure(text=get_random_phrase())
-#         # for var, label in zip(checklist_vars, labels):  # Assuming you have checklist_labels corresponding to each checklist item
-#         #     var.set(False)  # Set all to unselected state
-#         app.after(1000, reset_checklist_states)
+    "No one reads reports, just make it look impressive!",
 
-def reset_checklist_states():
-    for var, label in zip(checklist_vars, labels):  # Assuming you have checklist_labels corresponding to each checklist item
-        var.set(False)  # Set all to unselected state
-        label.configure(fg_color="gray20")  # Reset text color (if you changed it)
+]
+    return random.choice(phrases)    
 
 def google_calendar_API():
     """Fetches and prints the next 5 upcoming events from Google Calendar."""
@@ -277,12 +278,15 @@ def google_calendar_API():
     # Get current time in RFC3339 format
     now = datetime.datetime.utcnow() - datetime.timedelta(days=5)
     now = (now).isoformat() + "Z"
+    later = datetime.datetime.utcnow() + datetime.timedelta(days=14)
+    later = (later).isoformat() + "Z"
 
     # Fetch the next 5 upcoming events
     events_result = service.events().list(
         calendarId="primary",
         timeMin=now,
-        maxResults=12,
+        timeMax=later,
+        maxResults=50,
         singleEvents=True,
         orderBy="startTime"
     ).execute()
@@ -291,11 +295,11 @@ def google_calendar_API():
     events = events_result.get("items", [])
 
     for event in events:
+       
         day = event["start"].get("dateTime", event["start"].get("date"))  # Handle all-day events
         if "T" in day:
             day = day[:10]
         day = format_date(day)
-
         # Convert Google Calendar API date format to Unix time
         day_clean = re.sub(r"^[A-Za-z]+, ", "", day)  # This removes the weekday name and the comma
         day_clean = re.sub(r"(st|nd|rd|th)", "", day_clean) # Step 2: Remove ordinal suffixes (e.g., 'st', 'nd', 'rd', 'th')
@@ -429,15 +433,67 @@ def update_calendar_tab():
 
 # === ASTRONOMY TAB ===
 def initialize_astronomy_tab(tab_astronomy):
-    astronomy_label = ctk.CTkLabel(tab_astronomy, text="Welcome to the Astronomy Tab!", font=("Arial", font_large))
-    astronomy_label.pack(expand=True)
+    astronomy_label = ctk.CTkLabel(tab_astronomy, text="Object Visibility Tonight (8:00pm)", font=("Arial", 24))
+    astronomy_label.pack(expand=False)
+
+    auth_string = "66ee8b75-2459-49ab-9a3f-586637c8fe61:3dda189650928f07a077fdd3d6f1cd1c6f0c2087e3e5188ee71280e089b843040735258c780a8af6477d1f1d05966934fdafdfd8615f77d8192e484ecfd61f09acb58b8eaf4da841162ba14fa56269b926fcccb93a2a72c6e96bb5a23516c05edd84aa1ae72b1084720724556a7ba4b0"
+    auth_bytes = auth_string.encode("utf-8")
+    auth_base64 = base64.b64encode(auth_bytes).decode("utf-8")
+    LAT, LON = 33.3062, -111.8413  # Chandler, AZ
+    DATE = datetime.date.today().isoformat()
+    URL = f"https://api.astronomyapi.com/api/v2/bodies/positions"
+
+    current_time = datetime.datetime.now().strftime("%H:%M:%S")
+    tonight = "20:00:00" 
+    
+    params = {
+        "latitude": LAT,
+        "longitude": LON,
+        "elevation": 0,
+        "from_date": DATE,
+        "to_date": DATE,
+        "time": current_time#tonight # replaceable with current_time
+    }
+    headers = {
+    "Authorization": f"Basic {auth_base64}"
+    }
+    response = requests.get(URL, headers=headers, params=params)
+
+    if response.status_code == 200:
+        data = response.json()
+        planet_icons = {}
+        for i, body in enumerate(data['data']['table']['rows']):
+            name = body['cells'][0]['name']
+            if name not in ["Sun", "Earth","Uranus","Neptune","Pluto"]:
+                el = float(body['cells'][0]['position']['horizontal']['altitude']['degrees'])
+                az = float(body['cells'][0]['position']['horizontal']['azimuth']['degrees'])
+                print(name, az, el)
+                frame = ctk.CTkFrame(tab_astronomy, corner_radius=25, border_width=5)
+                frame.pack(side="left", fill="x", expand=True, padx=1, pady=1)  # Distribute evenly
+                planet_name_label = ctk.CTkLabel(frame, text=name, font=("Arial", 32),width=100)  
+                planet_name_label.pack(pady=15,padx=0,side="top",expand=True, anchor="center")
+                planet_icon_label = ctk.CTkLabel(frame, text="", font=("Arial", 18),width=100)  
+                planet_icon_label.pack(pady=10,padx=0,side="top",expand=True, anchor="center")
+                formatted_string = f"El: {el:.1f}°\nAz: {az:.1f}°"
+
+                planet_details_label = ctk.CTkLabel(frame, text=formatted_string, font=("Arial", 28),width=100)  
+                planet_details_label.pack(pady=10,padx=0,side="top",expand=True, anchor="center")
+                if el > 35:
+                    planet_details_label.configure(text_color='lime green')
+                    planet_name_label.configure(text_color='lime green')
+                elif el > 0:
+                    planet_details_label.configure(text_color='orange2')
+                    planet_name_label.configure(text_color='orange2')
+                image = Image.open(f"{name.lower()}.png")
+                ctk_img = ctk.CTkImage(image, size=(100,100))
+                planet_icon_label.configure(image=ctk_img,text="")
 # === SETTINGS TAB ===
 def initialize_settings_tab(tab_settings):
     theme_switch = ctk.CTkSwitch(tab_settings, text="Light Mode", command=toggle_theme)
     theme_switch.pack(expand=True)
     exit_button = ctk.CTkButton(tab_settings, text="Exit", command=close_app, fg_color="red", hover_color="darkred")
     exit_button.pack(pady=10)
-    about_label = ctk.CTkLabel(tab_settings, text="Proshawnsky Pi Dashboard\nVersion 2.0", font=("Arial", 24))
+    about_label = ctk.CTkLabel(tab_settings, text="Proshawnsky Pi Dashboard\nVersion 2.3", font=("Arial", 24))
     about_label.pack(expand=True)
     update_button = ctk.CTkButton(tab_settings, text="Update Calendar", command=update_calendar_tab)
     update_button.pack(pady=10)  # Adjust padding as needed
@@ -445,7 +501,6 @@ def initialize_settings_tab(tab_settings):
 def initialize_checklists_tab(tab_checklists):
     tabview = ctk.CTkTabview(tab_checklists,corner_radius=20,border_width=2)
     tabview.pack(expand=True, fill="both", padx=0, pady=0,)
-    
     Ellie_work_Checklist = Checklist(name="Ellie Work", items=["Phone", "Keys", "Badge", "Lunch","Water", "Coffee", "Laptop"])
     Shawn_work_Checklist = Checklist(name="Shawn Work", items=["Phone", "Keys", "Wallet","Badge", "Lunch", "Coffee", "Glasses"])
     Shawn_Biking = Checklist(name="Shawn Biking", items=["Water X2", "Food", "Phone","Wallet","Wahoo", "Lights","Gloves", "Glasses"])
@@ -469,7 +524,7 @@ def initialize_checklists_tab(tab_checklists):
             row = index // 3  # Spread labels into two rows
             col = index % 3   # Alternate between column 0 and 1
 
-            label = ctk.CTkLabel(checklist_frame, text=item, font=("Arial", 40), cursor="none", corner_radius=10,fg_color="gray20")  # Makes it clickable
+            label = ctk.CTkLabel(checklist_frame, text=item, font=("Arial", 60), cursor="none", corner_radius=10,fg_color="gray20")  # Makes it clickable
             label.bind("<Button-1>", lambda e, i=index, c=checklist: toggle(c,i))  # Bind click event
             
             label.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")  # Place in grid
@@ -479,14 +534,13 @@ def initialize_checklists_tab(tab_checklists):
         checklist_frame.columnconfigure(0, weight=1,uniform="equal")
         checklist_frame.columnconfigure(1, weight=1,uniform="equal")
         checklist_frame.columnconfigure(2, weight=1,uniform="equal")
-        tabview._segmented_button.configure(font=("Arial", 24))  # Adjust font size here
+        tabview._segmented_button.configure(font=("Arial", 30))  # Adjust font size here
 
         footer_label = ctk.CTkLabel(tab, text="", font=("Arial", 24))
         footer_label.pack(pady=10)  # Using pack for other elements
         checklist.set_message_label(footer_label)
 
     return labels, footer_label
-
 # === SET UP WINDOW ===
 def start():
 # Initialize main application
@@ -511,7 +565,7 @@ def start():
 
     # Create a Tabview
     tabview = ctk.CTkTabview(app,corner_radius=20,border_width=2)
-    tabview.pack(expand=True, fill="both", padx=0, pady=0,)
+    tabview.pack(expand=True, fill="both", padx=0, pady=0)
 
     # Add tabs
     tab_home = tabview.add("Home")
@@ -519,11 +573,15 @@ def start():
     tab_calendar = tabview.add("Calendar")
     tab_astronomy = tabview.add("Astronomy")
     tab_checklists = tabview.add("Checklists")
+    
     tab_settings = tabview.add("Settings")
-    tabview._segmented_button.configure(font=("Arial", 24))  # Adjust font size here
+    tabview._segmented_button.configure(font=("Arial", 30))  # Adjust font size here
+
     return app, tab_home, tab_weather, tab_calendar, tab_astronomy, tab_settings, tab_checklists, font_large, font_small
 
 # Create window, populate tabs
+
+sound = pygame.mixer.Sound("mixkit-cool-interface-click-tone-2568.wav")
 app, tab_home, tab_weather, tab_calendar, tab_astronomy, tab_settings, tab_checklists, font_large, font_small = start()
 date_label, clock_label = initialize_home_tab(tab_home)
 weather_label, weather_forecast_containers, weather_forcast_day_labels, weather_forecast_temp_labels, weather_forcast_icons = initialize_weather_tab(tab_weather)
